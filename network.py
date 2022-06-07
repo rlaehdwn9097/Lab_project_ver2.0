@@ -202,7 +202,7 @@ class Network(list):
     def request(self):
         requested_content = random.choice(sc.testScenario)
         self.requested_content = requested_content
-        print(self.requested_content.__dict__)
+        #print(self.requested_content.__dict__)
         return requested_content
 
     def requested_content_and_get_path(self, nodeID, requested_content):

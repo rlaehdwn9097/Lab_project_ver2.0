@@ -2,11 +2,9 @@ from distutils import core
 from importlib.resources import path
 from platform import node
 from queue import Empty
-from re import X
 from turtle import shape
 from typing import List
 
-from sympy import re
 import network as nt
 import config as cf
 import content as ct
@@ -78,6 +76,7 @@ class DQNagent():
         # ! 입력되는 컨텐츠의 카테고리
         # ! 입력되는 요일(Round%7)
         # ! 독립 : 각  BS의 가용캐쉬 , 1. 컨테츠 카테고리 2. 입력되는 요일
+        self.round_nb = 0
         self.state:np.array = self.set_state()
         #print("init 안에서의 self.state")
         #print(self.state)
@@ -131,7 +130,7 @@ class DQNagent():
 
         # Done 조건
         self.stop = cf.MAX_ROUNDS
-        self.round_nb = 0
+        
         
         # cache hit count ==> network.py에 넣어야할지도 모름
         self.cache_hit_cnt = 0
@@ -142,6 +141,9 @@ class DQNagent():
 
     def reset(self):
         self.network = nt.Network()
+
+        # state 함수 안에 round_day를 가져오는 
+        self.round_nb = 0
         self.state = self.set_state()
         self.cache_hit_cnt = 0
         return self.state
@@ -153,7 +155,8 @@ class DQNagent():
 
         # network.py 에서 round_day 도 state에 추가할 예정
         # 그러면 step 함수 전에 빼와야함
-
+        round_day =  self.network.days[self.round_nb] % 7
+        state.append(round_day)
 
         # MicroBS
         for i in range(cf.NUM_microBS[0]*cf.NUM_microBS[1]):
@@ -233,6 +236,9 @@ class DQNagent():
         self.stop = self.stop - 1
         # 이제 여기서 요청 시작 {노드, 요청한 컨텐츠}
         
+
+        # @ round_day 를 state 로 빼야함 
+        # @ reset 할 때 고려
         round_day =  self.network.days[self.round_nb] % 7
         requested_content, path = self.network.request_and_get_path(round_day)
 
@@ -247,15 +253,11 @@ class DQNagent():
         #print("act 실행")
         self.act(nodeID, requested_content, action)
 
-        # ! AR_MicroBS = self.get_AR("MicroBS")
-        # ! AR_BS = self.get_AR("BS")
-        # ! AR_DataCenter = self.get_AR("DataCenter")
-        next_state = self.set_state()
 
-        reward = self.get_reward(nodeID, requested_content)
-        #print(type(reward))
-        #print("reward : "+ str(reward))
+
         #! 종료 시점 언제 알려줄지도 수정
+        # @ round_day 가 state에 포함되기 때문에 
+        # @ next_state 를 구하기 전에 올려줌
         if self.stop != 0:
             self.round_nb += 1
             done = False
@@ -263,7 +265,11 @@ class DQNagent():
             done = True
             self.stop = cf.MAX_ROUNDS
             self.round_nb = 0
-        #print("step 끝")
+
+
+        next_state = self.set_state()
+
+        reward = self.get_reward(nodeID, requested_content)
 
         return next_state, reward, done
 
@@ -289,8 +295,9 @@ class DQNagent():
                 action = self.choose_action(state)
                 #print("choose_action 끝")
                 # observe reward, new_state
+                #print("state : {}".format(state))
                 next_state, reward, done = self.step(action)
-
+                #print("next_state : {}".format(next_state))
                 train_reward = reward + time*0.01
 
                 # add transition to replay buffer
@@ -305,9 +312,6 @@ class DQNagent():
                     # sample transitions from replay buffer
                     states, actions, rewards, next_states, dones = self.buffer.sample_batch(self.BATCH_SIZE)
                     
-                    #print("states.shape ; {}".format(states.shape))
-                    #print("next_states.shape ; {}".format(next_states.shape))
-
                     # predict target Q-values
                     target_qs = self.target_dqn(tf.convert_to_tensor(next_states, dtype=tf.float32))
 
@@ -363,6 +367,7 @@ class DQNagent():
         self.result_file.write(' Reward: ')
         self.result_file.write(str(episode_reward))
         self.result_file.write('\n')
+
 
     def act(self, nodeID, requested_content, action):
 
@@ -436,7 +441,7 @@ class DQNagent():
         # ! self.get_AR("BS")
         # ! self.get_AR("MicroBS")
         # self.state = 
-        print("action : " + str(action))
+        #print("action : " + str(action))
 
 
     def get_reward(self, nodeID, requested_content):
@@ -454,7 +459,7 @@ class DQNagent():
 
         reward = 0
         self.set_reward_parameter(nodeID=nodeID, requested_content=requested_content)
-        reward = self.a*(self.d_core - self.d_cache) + self.b*self.c_node
+        reward = self.a*(self.d_core - self.d_cache -30) - (cf.NB_NODES - self.b*self.c_node)
         reward = float(reward)
         #print(reward)
         return reward
@@ -474,6 +479,7 @@ class DQNagent():
 
         self.d_core = self.get_d_core(nodeID, requested_content)
         self.d_cache = self.get_d_cache(nodeID, requested_content)
+
         self.c_node = self.get_c_node()
 
 
@@ -501,9 +507,9 @@ class DQNagent():
             # 데이터 센터에 캐싱이 되어 있는 경우, Core Internet 추가
             elif len(path) == 4:
                 path.append(0)
-
-        d_core = self.network.uplink_latency(path) + self.network.downlink_latency(path)
-
+        #print(self.network.uplink_latency(path).shape)
+        d_core = (self.network.uplink_latency(path) + self.network.downlink_latency(path)) * 1000
+        
         return d_core
 
     def get_d_cache(self, nodeID, requested_content):
@@ -511,7 +517,7 @@ class DQNagent():
         path = []
         path = self.network.requested_content_and_get_path(nodeID, requested_content)
 
-        d_cache = self.network.uplink_latency(path) + self.network.downlink_latency(path)
+        d_cache = (self.network.uplink_latency(path) + self.network.downlink_latency(path)) * 1000
 
         return d_cache
 
