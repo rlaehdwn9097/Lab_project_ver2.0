@@ -68,8 +68,8 @@ class Network(list):
         else:
             ct.updatequeue(path,requested,self.microBSList,self.BSList,self.dataCenter)
             
-        #print("uplink latency is:", round(self.uplink_latency(path)[0]*1000,6))
-        #print("downlink latency is:", round(self.downlink_latency(path)[0]*1000,6))
+        print("uplink latency is:", round(self.uplink_latency(path)[0]*1000,6))
+        print("downlink latency is:", round(self.downlink_latency(path)[0]*1000,6))
         #result.close()
 
     def search_next_path(self,x,y,type):

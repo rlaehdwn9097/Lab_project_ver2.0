@@ -118,8 +118,8 @@ class DQNagent():
         self.memory = deque(maxlen = 10000)
 
         # reward parameter
-        self.a = 3
-        self.b = 0.0007
+        self.a = 1
+        self.b = 0.01
         self.d_core = 0
         self.d_cache = 0
         self.R_cache = 0
@@ -459,7 +459,7 @@ class DQNagent():
 
         reward = 0
         self.set_reward_parameter(nodeID=nodeID, requested_content=requested_content)
-        reward = self.a*(self.d_core - self.d_cache -30) - (cf.NB_NODES - self.b*self.c_node)
+        reward = self.a*(self.d_core - self.d_cache -30) - self.b*(cf.NB_NODES - self.c_node)
         reward = float(reward)
         #print(reward)
         return reward
